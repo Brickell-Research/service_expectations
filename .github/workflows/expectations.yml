@@ -1,0 +1,94 @@
+name: Sync Expectations
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-binary:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: expectations
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Compile Expectations with the Caffeine Language
+      uses: Brickell-Research/caffeine_lang_github_action@main
+      with:
+        blueprint_file: expectations/blueprints.caffeine
+        expectations_dir: expectations/
+        output_path: expectations
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.7"
+
+    - name: Terraform Init
+      run: |
+          terraform init \
+            -backend-config="path=terraform.tfstate" \
+            -migrate-state \
+            -force-copy \
+            -input=false
+      env:
+        TF_INPUT: "false"
+        TF_IN_AUTOMATION: "true"
+    
+    - name: Terraform Validate
+      run: terraform validate
+    
+    - name: Validate Datadog Credentials
+      env:
+        DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+        DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+      run: |
+        if [ -z "$DATADOG_API_KEY" ] || [ -z "$DATADOG_APP_KEY" ]; then
+          echo "Error: DATADOG_API_KEY or DATADOG_APP_KEY is not set in GitHub secrets."
+          exit 1
+        fi
+        
+        echo "Validating Datadog API credentials..."
+        response_code=$(curl -s -o /dev/null -w "%{http_code}" -H "DD-API-KEY: $DATADOG_API_KEY" -H "DD-APPLICATION-KEY: $DATADOG_APP_KEY" "https://api.datadoghq.com/api/v1/validate")
+        
+        if [ "$response_code" -eq 200 ]; then
+          echo "✅ Datadog credentials are valid."
+        else
+          echo "❌ Error: Datadog credentials validation failed. HTTP status code: $response_code"
+          exit 1
+        fi
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve -input=false
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        TF_VAR_datadog_api_key: ${{ secrets.DATADOG_API_KEY }}
+        TF_VAR_datadog_app_key: ${{ secrets.DATADOG_APP_KEY }}
+    - name: Commit and Push Terraform State
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        # Always commit and push state files regardless of git status
+        echo "Committing Terraform state files..."
+        # Stash any local changes before pulling to avoid rebase errors
+        git stash --include-untracked
+        # Pull latest changes to avoid conflicts
+        git pull --rebase
+        # Apply stashed changes back
+        git stash pop || true
+        # Force add the state files (will add even if gitignored)
+        git add -f *.tfstate || true
+        # Commit even if no changes detected by git
+        git commit -m "[SLO SYNC V2] Update Terraform state files [skip ci]" || echo "No changes to commit, but continuing..."
+        # Set up authentication for push using GITHUB_TOKEN
+        git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+        # Force push to ensure state files are updated
+        git push -f
+        echo "✅ Terraform state files committed and pushed to repository."
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
