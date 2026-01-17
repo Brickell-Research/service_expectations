@@ -8,6 +8,8 @@ on:
 jobs:
   test-binary:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: expectations
@@ -82,11 +84,11 @@ jobs:
         # Force add the state files (will add even if gitignored)
         git add -f *.tfstate || true
         # Commit even if no changes detected by git
-        git commit -m "[SLO SYNC V2] Update Terraform state files [skip ci]" || echo "No changes to commit, but continuing..."
+        git commit -m "[SYNC] Update Terraform state files [skip ci]" || echo "No changes to commit, but continuing..."
         # Set up authentication for push using GITHUB_TOKEN
         git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
         # Force push to ensure state files are updated
         git push -f
         echo "✅ Terraform state files committed and pushed to repository."
       env:
-        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        GITHUB_TOKEN: ${{ github.token }}
