@@ -1,0 +1,7 @@
+Expectations for "lcp_p75_latency"
+  * "Caffeine Website General LCP is Reasonable":
+    Provides {
+      threshold: 99.9,
+      window_in_days: 7,
+      application_name: "caffeine_lang_website"
+    }

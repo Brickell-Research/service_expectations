@@ -1,2 +1,25 @@
-## ========= Blueprints ========= ##
+## ========= Extendables ========= ##
+### === Provides ###
+#### Datadog
+_datadog (Provides): { vendor: "datadog" }
+### === Requires ###
+#### Environment
+_env (Requires): {  
+  environment: Defaulted(String, "production") { x | x in { "production" } }
+}
 
+## ========= Blueprints ========= ##
+Blueprints for "SLO"
+  ## LCP P75 of our frontend clients
+  * "lcp_p75_latency" extends [_datadog, _env]:
+    Requires {
+      # Google recommends 2.5s
+      threshold_in_ns: Defaulted(Integer, 2500000000),
+      application_name: String
+    }
+    Provides {
+      value: "time_slice(query <= $$threshold_in_ns$$ per 5m)",
+      queries: {
+        query: "p75:rum.lcp{$$application_name$$}"
+      }
+    }
